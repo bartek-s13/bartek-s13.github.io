@@ -40,6 +40,8 @@ monthStart <- function(x) {
 }
 
 monthStart <- Vectorize(monthStart)  
+
+
 ```
 
 # Zapewnienie powtarzalności
@@ -90,29 +92,30 @@ bitcoin_trvou <- bitcoin_trvou %>%
   rename(date=Date, value=Value)
 
 currency_exchange_rates <-currency_exchange_rates %>%
-  select(Date, Euro, U.K..Pound.Sterling) %>%
-  rename(date=Date, EURO=Euro, GBP=U.K..Pound.Sterling) %>%
-  gather(currency, value, EURO:GBP) %>%
-  mutate(currency=as.factor(currency), date=as.POSIXct(strptime(date, "%Y-%m-%d")), value=1/value)  %>%
+  select(Date, Chinese.Yuan, Australian.Dollar, Russian.Ruble, Canadian.Dollar) %>%
+  rename(date=Date, Yuan=Chinese.Yuan, `Dolar australijski`=Australian.Dollar, Rubel=Russian.Ruble, `Dolar kanadyjski`=Canadian.Dollar) %>%
+  mutate(`Dolar australijski`=1/`Dolar australijski`) %>%
+  gather(waluta, value, Yuan:`Dolar kanadyjski`) %>%
+  mutate(waluta=as.factor(waluta), date=as.POSIXct(strptime(date, "%Y-%m-%d")))  %>%
   filter(!is.na(value))
 
 gold_prices <- mutate(gold_prices,USD=f(USD_AM,  USD_PM), GBP=f(GBP_AM, GBP_PM), EURO=f(EURO_AM, EURO_PM)) %>% 
   select(date, USD, GBP, EURO) %>%
-  gather(currency, value, USD:EURO) %>%
-  mutate(currency=as.factor(currency), date=as.POSIXct(strptime(date, "%Y-%m-%d")))  %>%
+  gather(waluta, value, USD:EURO) %>%
+  mutate(waluta=as.factor(waluta), date=as.POSIXct(strptime(date, "%Y-%m-%d")))  %>%
   filter(!is.na(value))
 
 s_p_composite <- gather(s_p_composite, indicator, value, S.P.Composite:Cyclically.Adjusted.PE.Ratio) %>%
-  mutate(indicator=as.factor(indicator), Year=cut(as.POSIXct(strptime(Year, "%Y-%m-%d")), "month")) %>%
-  rename(date=Year) %>%
+  mutate(indicator=as.factor(indicator), Year=as.POSIXct(cut(as.POSIXct(strptime(Year, "%Y-%m-%d")), "month"))) %>%
+  rename(date=Year, `wskaźnik`=indicator) %>%
   filter(!is.na(value))
 
 world_development_indicators <- gather(world_development_indicators,date, value, "1970 [YR1970]":"2020 [YR2020]") %>% 
   mutate(year=as.POSIXct(strptime(sprintf('%s-01-01',substr(date, 1, 4)), "%Y-%m-%d"))) %>% 
-  rename(country_name=`Country Name`, indicator=`Series Name`) %>%
-  mutate(country_name=as.factor(country_name), indicator=as.factor(indicator)) %>%
+  rename(country_name=`Country Name`, `wskaźnik`=`Series Name`) %>%
+  mutate(country_name=as.factor(country_name), `wskaźnik`=as.factor(`wskaźnik`)) %>%
   filter(!is.na(value)) %>%
-  select(country_name, indicator, year, value)
+  select(country_name, `wskaźnik`, year, value)
 ```
 
 # Podsumowanie rozmiaru zbioru, podstawowe statystyki i analiza atrybutów
@@ -224,96 +227,49 @@ ggplot(bitcoin_trvou, aes(x=date, y=value))  + geom_line(color='yellow') + labs(
 ```
 
 ## Cena złota
+```{r pomoc_zloto, echo=FALSE}
+summary <- gold_prices %>% 
+  group_by(waluta) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+```
+
+```{r summary_zloto, echo=FALSE}
+knitr::kable(summary, align = 'ccccccc')
+```
+
 ```{r wykres_złoto, echo=FALSE}
-p <- ggplot(gold_prices, aes(x=date, y=value, color=currency))  + geom_line() + labs(x="Data", y="Wartość w odpowiedniej walucie", title="Ceny złota w róznych walutach") + 
+p <- ggplot(gold_prices, aes(x=date, y=value, color=waluta))  + geom_line() + labs(x="Data", y="Wartość w odpowiedniej walucie", title="Ceny złota w róznych walutach") + 
   scale_x_datetime(breaks = "5 years", date_labels = "%Y") + 
   theme_light()
 ggplotly(p)
 ```
-### EURO
-```{r pomoc_euro, echo=FALSE}
-options(scipen=999)
-tmp <- gold_prices %>% filter(as.numeric(currency) == 1)
-min_date <- min(tmp$date)
-max_date <- max(tmp$date)
-min <- min(tmp$value)
-max <- max(tmp$value)
-mean <- round(mean(tmp$value), 2)
-```
-
-Statystyki
-```{r statystyki_euro, echo=FALSE}
-knitr::kable(summary(gold_prices %>% filter(as.numeric(currency) == 1)))
-```
-W okresie od `r min_date` do `r max_date` cena złota w Euro wachała się od `r min` do `r max`. Średnia wartość w tym okresie wyniosła `r mean`. 
-
-### Funt brytyjski
-```{r pomoc_funt, echo=FALSE}
-options(scipen=999)
-tmp <- gold_prices %>% filter(as.numeric(currency) == 2)
-min_date <- min(tmp$date)
-max_date <- max(tmp$date)
-min <- min(tmp$value)
-max <- max(tmp$value)
-mean <- round(mean(tmp$value), 2)
-```
-Statystyki
-```{r statystyki_funt, echo=FALSE}
-knitr::kable(summary(gold_prices %>% filter(as.numeric(currency) == 2)))
-```
-W okresie od `r min_date` do `r max_date` cena złota w funtach  wachała się od `r min` do `r max`. Średnia wartość w tym okresie wyniosła `r mean`. 
-
-### Dolar amerykański
-```{r pomoc_dolar, echo=FALSE}
-options(scipen=999)
-tmp <- gold_prices %>% filter(as.numeric(currency) == 3)
-min_date <- min(tmp$date)
-max_date <- max(tmp$date)
-min <- min(tmp$value)
-max <- max(tmp$value)
-mean <- round(mean(tmp$value), 2)
-```
-Statystyki
-```{r statystyki_dolar, echo=FALSE}
-knitr::kable(summary(gold_prices %>% filter(as.numeric(currency) == 3)))
-```
-W okresie od `r min_date` do `r max_date` cena złota w dolarach wachała się od `r min` do `r max`. Średnia wartość w tym okresie wyniosła `r mean`. W cenach złota można zaobserować wzrost w 1980 roku, po którym do 2005 roku nie obserwuje się dużych wahań. 
 
 ## Kursy walut
 
 Statystyki
-```{r currency_stat, echo=FALSE}
-knitr::kable(summary(currency_exchange_rates))
+```{r pomoc_currency, echo=FALSE}
+summary <- currency_exchange_rates %>% 
+  group_by(waluta) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
 ```
 
-```{r currency_pomoc, echo=FALSE}
-euro <- currency_exchange_rates %>% filter(currency=="EURO")
-gbp <- currency_exchange_rates %>% filter(currency=="GBP")
-min_euro <- euro %>% filter(value == min(value))
-max_euro <- euro %>% filter(value == max(value))
-
-min_gbp <- gbp %>% filter(value == min(value))
-max_gbp <- gbp %>% filter(value == max(value))
+```{r summary_currency, echo=FALSE}
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r currency_wykres, echo=FALSE}
-ggplot(currency_exchange_rates, aes(x=date, y=value, color=currency))  + geom_line() + labs(x="Data", y="Wartość dolara w danej walucie", title="Kurs dolara do Euro i Funta") + scale_x_datetime(breaks = "2 years", date_labels = "%Y") + theme_light()
+ggplot(currency_exchange_rates, aes(x=date, y=value))  + geom_line() + facet_wrap(~waluta,scales = "free") + labs(x="Data", y="Wartość", title="Wartość jednego dolara w innych walutach") + scale_x_datetime(breaks = "5 years", date_labels = "%Y") + theme_light()
 ```
 
-Najwyższą wartość w euro dolar osiągnął `r format(max_euro$date, '%d-%m-%Y')`, wyniosła ona `r round(max_euro$value,2)` euro. Najniższa wartość wyniosła `r round(min_euro$value,2)` i została odnotowana w dniu `r format(min_euro$date, '%d-%m-%Y')`. W przypadku funta najwyższa wartość, którą dolar osiągnął w tej walucie wyniosła `r round(max_gbp$value,2)` (`r format(max_gbp$date, '%d-%m-%Y')`) a najniższa `r round(min_gbp$value,2)` (`r format(min_gbp$date, '%d-%m-%Y')`).
+
 
 
 ## Wyniki S&P Composite
-Statystyki
-```{r statystyki_s_p_composite, echo=FALSE}
-knitr::kable(summary(s_p_composite, maxsum = 9))
-```
-
 
 ### Wskaźnik cen towarów i usług konsumpcyjnych
 ```{r pomoc_cpi, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 1)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 1)
 min_date <- min(tmp$date)
 max_date <- max(tmp$date)
 min <- min(tmp$value)
@@ -322,8 +278,13 @@ max <- max(tmp$value)
 
 Statystyki
 ```{r statystyki_cpi, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
+
 ```{r wykres_cpi, echo=FALSE}
 ggplot(tmp, aes(x=date, y=value)) + 
   geom_line(color='aquamarine3') + 
@@ -331,19 +292,25 @@ ggplot(tmp, aes(x=date, y=value)) +
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
   theme_light()
 ```
+
 Indeks CPI to średnia ważona towarów i usług kupowanych przez przeciętne gospodarstwo domowe (https://pl.wikipedia.org/wiki/Wska%C5%BAnik_cen_towar%C3%B3w_i_us%C5%82ug_konsumpcyjnych). W latach `r min_date` do `r max_date` wahał się od `r min` do `r max`. Na wykresie widać, że po roku 1973 nastąpił gwałtowniejszy wzrost wartości tego indeksu.
 
 ### Cyclically adjusted price-to-earnings ratio
 ```{r pomoc_cape, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 2)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 2)
 m <- tmp %>% filter(value == max(value))
 ```
 
 Statystyki
 ```{r statystyki_cape, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
+
 ```{r wykres_cape, echo=FALSE}
 ggplot(tmp, aes(x=date, y=value)) + 
   geom_line(color='blue') + 
@@ -351,12 +318,13 @@ ggplot(tmp, aes(x=date, y=value)) +
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
   theme_light()
 ```
+
 Powyższy wskaźnik pomaga w ocenie czy ceny akcji na giełdzie są zawyżone. Najwyższa jego wartość wyniosła `r m$value`. Miało to miejsce w `r format(m$date, '%Y')` roku. Był to okres "bański internetowej" kiedy to przeceniane były wartości firm prowadzących działalność w internecie (https://pl.wikipedia.org/wiki/Ba%C5%84ka_internetowa). Inna wysoka wartość widoczna na wykresie to okres początku wielkiego kryzysu (https://pl.wikipedia.org/wiki/Czarny_wtorek https://www.parkiet.com/Felietony/309199946-Co-podpowiada-wskaznik-Shiller-PE.html?preview=&remainingPreview=&grantedBy=preview&). 
 
 ### Dywidendy
 ```{r pomoc_divident, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 3 | as.numeric(indicator) == 6)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 3 | as.numeric(`wskaźnik`) == 6)
 #min_date <- min(tmp$date)
 #max_date <- max(tmp$date)
 #min <- min(tmp$value)
@@ -365,11 +333,15 @@ tmp <- s_p_composite %>% filter(as.numeric(indicator) == 3 | as.numeric(indicato
 
 Statystyki
 ```{r statystyki_divident, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_divident, echo=FALSE}
-ggplot(tmp, aes(x=date, y=value, color=indicator)) + 
+ggplot(tmp, aes(x=date, y=value, color=wskaźnik)) + 
   geom_line() + 
   labs(x="Data", y="Wartość", title="Dywidendy") +  
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
@@ -382,7 +354,7 @@ Wartość dywident w okresie czasu, który obejmują dane wykazują trend wzrost
 
 ```{r pomoc_earnings, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 4 | as.numeric(indicator) == 7)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 4 | as.numeric(`wskaźnik`) == 7)
 min_date <- min(tmp$date)
 max_date <- max(tmp$date)
 min <- min(tmp$value)
@@ -391,23 +363,28 @@ max <- max(tmp$value)
 
 Statystyki
 ```{r statystyki_earnings, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_earnings, echo=FALSE}
-ggplot(tmp, aes(x=date, y=value, color=indicator)) + 
+ggplot(tmp, aes(x=date, y=value, color=wskaźnik)) + 
   geom_line() + 
   labs(x="Data", y="Wartość", title="Zysk") +  
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
   theme_light()
 ```
+
 Podobnie jak w przypadku dywident faktyczny zysk wykazuje się większymi wahaniami i większą wartością niż zysk.
 
 ### Long Interest Rate 
 
 ```{r pomoc_interest, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 5)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 5)
 min_date <- min(tmp$date)
 max_date <- max(tmp$date)
 min <- min(tmp$value)
@@ -416,7 +393,11 @@ max <- max(tmp$value)
 
 Statystyki
 ```{r statystyki_interest, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_interest, echo=FALSE}
@@ -431,7 +412,7 @@ ggplot(tmp, aes(x=date, y=value)) +
 
 ```{r pomoc_price, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 8)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 8)
 min_date <- min(tmp$date)
 max_date <- max(tmp$date)
 min <- min(tmp$value)
@@ -440,7 +421,11 @@ max <- max(tmp$value)
 
 Statystyki
 ```{r statystyki_price, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_price, echo=FALSE}
@@ -455,7 +440,7 @@ ggplot(tmp, aes(x=date, y=value)) +
 
 ```{r pomoc_composite, echo=FALSE}
 options(scipen=999)
-tmp <- s_p_composite %>% filter(as.numeric(indicator) == 9)
+tmp <- s_p_composite %>% filter(as.numeric(`wskaźnik`) == 9)
 min_date <- min(tmp$date)
 max_date <- max(tmp$date)
 min <- min(tmp$value)
@@ -464,7 +449,11 @@ max <- max(tmp$value)
 
 Statystyki
 ```{r statystyki_composite, echo=FALSE}
-knitr::kable(summary(tmp))
+summary <- tmp %>% 
+  group_by(`wskaźnik`) %>%
+  summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
+
+knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_composite, echo=FALSE}
@@ -481,44 +470,184 @@ Statystyki
 ```{r statystyki_indicators, echo=FALSE}
 knitr::kable(summary(world_development_indicators))
 ```
-Zbiór opisuje `r length(unique(world_development_indicators$country_name)) - 7` państw oraz cały świat oraz 6 kategori wysokości przychdu przy pomocy `r length(unique(world_development_indicators$indicator))` wskaźników w latach 1970-2020.
+
+Zbiór opisuje `r length(unique(world_development_indicators$country_name)) - 7` państw oraz cały świat oraz 6 kategori wysokości przychdu przy pomocy `r length(unique(world_development_indicators$wskaźnik))` wskaźników w latach 1970-2020.
 
 # Korelacje
+
+```{r cor_pomoc, echo=FALSE}
+zloto_dolary <- gold_prices %>% filter(waluta=="USD") %>% select(date, value)
+```
+
 Przy szukaniu korelacji...
-## Korelacje pomiędzyw wkażnikami rozwoju 
+
+## Korelacje pomiędzy ceną złota w dolarach i wkażnikami rozwoju 
+
 ### Świat
-```{r world}
-#indicators <- unique(world_development_indicators$indicator)
-#world <- world_development_indicators %>% filter(country_name == "World")
-#for (i in indicators) {
-#  for (j in indicators) {
-#    if(i!=j){
-#      x <- world %>% filter(indicator == i)
-#      y <- world %>% filter(indicator == j)
-#      joined <- inner_join(x, y, by="year")
-#      c <- cor(joined$value.x, joined$value.y)
-#      txt <- paste(i , " do " , j , "wynosi ", c)
-#      if (!is.na(c) & abs(c) > 0.9){
-#        print(txt)
-#      }
-#      
-#    }
-#  }
-#    
-#}
+
+```{r world, echo=FALSE, warning=FALSE, results='asis'}
+indicators <- unique(world_development_indicators$wskaźnik)
+tmp <- world_development_indicators %>% filter(country_name == "World") %>% select(year, value, wskaźnik)
+zloto_dolary_rok <- zloto_dolary %>% 
+  group_by(year=format(date, "%Y")) %>% 
+  summarise(value=mean(value)) %>%
+  mutate(year=as.POSIXct(strptime(sprintf('%s-01-01',year), "%Y-%m-%d")))
+
+to_visualize <- data.frame(year=as.Date(character()),
+                           value.x=double(),
+                           wskaźnik=factor(),
+                           value.y=double(),
+                 stringsAsFactors=FALSE) 
+
+for (i in indicators) {
+      x <- tmp %>% filter(wskaźnik == i)
+      joined <- inner_join(x, zloto_dolary_rok, by="year")
+      if (nrow(joined) >= 30) {
+        c <- cor(joined$value.x, joined$value.y)
+        txt <- paste(i , " do  ceny zlota wynosi ", round(c, 2), "\n\n")
+        if (!is.na(c) & abs(c) > 0.9){
+          cat(txt)
+          to_visualize <- rbind(to_visualize, joined)
+      }
+    }
+}
+```
+
+```{r cor_world_wykres, echo=FALSE, fig.height=16, message=FALSE, warning=FALSE, , fig.width=8}
+ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
 ```
 
 
-
-```{r liczba_kraj_rok2, echo=FALSE, warning=FALSE, fig.width = 6, fig.height = 4}
-options(dplyr.summarise.inform = FALSE)
-#for (i in indicators){
-#  pl <- world %>% filter(indicator == i)  %>% ggplot(aes(x=year, y=value)) +
-#  geom_line() + labs(x="Rok", y="Sumaryczna wskaźnik", title=i)
-#  print(pl)
-#}
-```
 ### USA
+
+```{r usa, echo=FALSE, warning=FALSE, results='asis'}
+indicators <- unique(world_development_indicators$wskaźnik)
+tmp <- world_development_indicators %>% filter(country_name == "United States")
+zloto_dolary_rok <- zloto_dolary %>% 
+  group_by(year=format(date, "%Y")) %>% 
+  summarise(value=mean(value)) %>%
+  mutate(year=as.POSIXct(strptime(sprintf('%s-01-01',year), "%Y-%m-%d")))
+
+to_visualize <- data.frame(year=as.Date(character()),
+                           value.x=double(),
+                           wskaźnik=factor(),
+                           value.y=double(),
+                 stringsAsFactors=FALSE) 
+
+for (i in indicators) {
+      x <- tmp %>% filter(wskaźnik == i)
+      joined <- inner_join(x, zloto_dolary_rok, by="year")
+      if (nrow(joined) >= 30) {
+        c <- cor(joined$value.x, joined$value.y)
+        txt <- paste(i , " do  ceny zlota wynosi ", round(c, 2), "\n\n")
+        if (!is.na(c) & abs(c) > 0.9){
+          cat(txt)
+          to_visualize <- rbind(to_visualize, joined)
+      }
+    }
+}
+```
+
+```{r cor_usa_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
+ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
+```
+
+## Korelacje pomiędzy ceną złota w dolarach i wkażnikami z S P Composite
+
+```{r s_p_composite, echo=FALSE, warning=FALSE, results='asis'}
+indicators <- unique(s_p_composite$wskaźnik)
+
+zloto_dolary_miesiac <- zloto_dolary %>% 
+  group_by(date=format(date, "%Y-%m")) %>% 
+  summarise(value=mean(value)) %>%
+  mutate(date=as.POSIXct(strptime(sprintf('%s-01',date), "%Y-%m-%d")))
+
+to_visualize <- data.frame(date=as.Date(character()),
+                           wskaźnik=factor(),
+                           value.x=double(),
+                           value.y=double(),
+                 stringsAsFactors=FALSE) 
+
+for (i in indicators) {
+      x <- s_p_composite %>% filter(wskaźnik == i)
+      joined <- inner_join(x, zloto_dolary_miesiac, by="date")
+      
+        c <- cor(joined$value.x, joined$value.y)
+        txt <- paste(i , " do  ceny zlota wynosi ", round(c, 2), "\n\n")
+        if (!is.na(c) & abs(c) > 0.75){
+          cat(txt)
+          to_visualize <- rbind(to_visualize, joined)
+      }
+    
+}
+```
+
+```{r cor_sp_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
+ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
+```
+
+## Korelacje pomiędzy ceną złota w dolarach i kursami wybraanych walut
+
+```{r currency, echo=FALSE, warning=FALSE, results='asis'}
+currencies <- unique(currency_exchange_rates$waluta)
+
+to_visualize <- data.frame(value.x=double(),
+                           value.y=double(),
+                           waluta=factor()) 
+```
+
+```{r currency2, echo=FALSE, warning=FALSE, results='asis'}
+for (i in currencies) {
+      x <- currency_exchange_rates %>% filter(waluta == i)
+      joined <- inner_join(x, zloto_dolary, by="date")
+        c <- cor(joined$value.x, joined$value.y)
+        txt <- paste("Korelacja kursu dolar/", i , " do  ceny zlota wynosi ", round(c, 2), "\n\n", sep="")
+        if (!is.na(c) & abs(c) > 0.75){
+          cat(txt)
+          joined <- joined %>% select(value.x, value.y, waluta)
+          to_visualize <- rbind(to_visualize, joined)
+      }
+    
+}
+```
+
+```{r cor_cur_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
+ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~waluta,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
+```
+
+## Korelacje pomiędzy ceną złota w dolarach i wskaźnikami dla Bitcoina
+
+```{r bitcoin, echo=FALSE, warning=FALSE, results='asis'}
+joined <- inner_join(x, bitcoin_diff, by="date")
+c <- cor(joined$value.x, joined$value.y)
+txt <- paste("bitcoin_diff do  ceny zlota wynosi ", round(c, 2), "\n\n")
+if (!is.na(c) & abs(c) > 0){
+    cat(txt)
+}
+
+joined <- inner_join(x, bitcoin_hrate, by="date")
+c <- cor(joined$value.x, joined$value.y)
+txt <- paste("bitcoin_hrate do  ceny zlota wynosi ", round(c, 2), "\n\n")
+if (!is.na(c) & abs(c) > 0){
+    cat(txt)
+}
+
+joined <- inner_join(x, bitcoin_mkpru, by="date")
+c <- cor(joined$value.x, joined$value.y)
+txt <- paste("bitcoin_mkpru do  ceny zlota wynosi ", round(c, 2), "\n\n")
+if (!is.na(c) & abs(c) > 0){
+    cat(txt)
+}
+
+joined <- inner_join(x, bitcoin_trvou, by="date")
+c <- cor(joined$value.x, joined$value.y)
+txt <- paste("bitcoin_trvou do  ceny zlota wynosi ", round(c, 2), "\n\n")
+if (!is.na(c) & abs(c) > 0){
+    cat(txt)
+}
+
+```
+
 # Przewidywanie cen złota
 
 ## Regresor
