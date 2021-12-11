@@ -4,21 +4,30 @@ author: "Bartłomiej Smolski"
 date: "`r format(Sys.Date(), '%d-%m-%Y')`"
 output: 
   html_document: 
-    toc: true
-    toc_float: true
+    toc: yes
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 ```
 
+# Podsumowanie
+
+Celem projektu była analiza danych dotyczących Bitcoina, wskaźników rozwoju na świecie, cen złota, kursów wymiany walut oraz miesięcznych wyników S&P Composite oraz, na jej podstawie, próba stworzenia regresora przewidującego ceny złota.
+
+Po wczytaniu i oczyszczeniu danych zostały one przeanalizowane i zwizualizowane. W dalszym kroku sprawdzone zostały korelacje danych z poszczególnych zbiorów z cenami złota w Dolarach amerykańskich. Krok ten wykazał między innymi, że dane dotyczące Bitcoina są słabo skorelowane z cenami złota, kurs Dolara amerykańskiego do Yuan wykazuje się silną ujemną korelacją, dane ze zbioru S&P Composite są mocno skorelowane z cenami złota, ale nie tak mocno jak wartości niektórych wskaźników rozwoju dotyczących USA i całego świata.
+
+W ostatniej sekcji stworzony został regresor z wykorzystaniem algorytmu eXtreme Gradient Boosting.
+
 # Wczytanie bibliotek
-```{r biblioteki, result='hide'}
-library(dplyr, warn.conflicts = FALSE)
-library(tidyr, warn.conflicts = FALSE)
-library(ggplot2, warn.conflicts = FALSE)
-library(readxl, warn.conflicts = FALSE)
-library(plotly, warn.conflicts = FALSE)
+```{r biblioteki, message=FALSE, warning=FALSE, result='hide'}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readxl)
+library(plotly)
+library(caret)
 ```
 
 ```{r funkcje, echo=FALSE, result='hide'}
@@ -82,7 +91,7 @@ world_development_indicators <-
 ```
 
 # Czyszczenie danych
-W przypadku wszystkich zbiorów danychkolumna zawierająca czas została nazwana "date", a jej klasa została zmieniona na POSIXct. Zbiory s_p_composite i world_development_indicators zawierają wartości wskaźników dla danych miesięcy lub lat. Dla uproszczenia łączenia z innymi zbiorami w dalszej części kolumna z datą zawiera odpowiednio pierwszy dzień danego miesiąca lub roku. Część zbiorów wymagała tranformacji, tak aby każda zmienna w nich przedstawiona była w osobnej kolumni a obserwacja w osobnym wierszu. Ze zbioru currency_exchange_rates zostały wybrane cztery waluty (wybór został wyjaśniony w części zawierającą analizę zbioru). Nazwy walut zostały zmienione na język polski. W przypadku Dolara australijskiego potrzebna była transformacja, aby wartości reprezentowały kusrs Dolara amerykańskiego do Dolara australijskiego, a nie jak ma to miejsce w orginalnym zbiorze Dolara australijskiego do Dolara amerykańskiego. W zbiorze gold_prices wartości dla danej waluty z dwóch kolumn jej dotyczących zostały połączone w jedą kolumnę zawierającą wartość średnią lub w przypadku gdy wartości z jedenj kolumny brakuje - wartością z drugiej kolumny. W przypadku wszystkich zbiorów wiersze zawierające wartości NA zostały usunięte.
+W przypadku wszystkich zbiorów danych klasa kolumny zawierająca czas została zmieniona na POSIXct. Zbiory s_p_composite i world_development_indicators zawierają wartości wskaźników dla danych miesięcy lub lat. Dla uproszczenia łączenia z innymi zbiorami w dalszej części kolumna z datą zawiera odpowiednio pierwszy dzień danego miesiąca lub roku. Część zbiorów wymagała transformacji, tak aby każda zmienna w nich przedstawiona była w osobnej kolumnie a obserwacja w osobnym wierszu. Ze zbioru currency_exchange_rates zostały wybrane cztery waluty (wybór został wyjaśniony w części zawierającą analizę zbioru). Nazwy walut zostały zmienione na język polski. W przypadku Dolara australijskiego potrzebna była transformacja, aby wartości reprezentowały kurs Dolara amerykańskiego do Dolara australijskiego, a nie jak ma to miejsce w oryginalnym zbiorze Dolara australijskiego do Dolara amerykańskiego. W zbiorze gold_prices wartości dla danej waluty z dwóch kolumn jej dotyczących zostały połączone w jedną kolumnę zawierającą wartość średnią lub w przypadku gdy wartości z jednej kolumny brakuje - wartość z drugiej kolumny. W przypadku wszystkich zbiorów po transformacji wiersze zawierające wartości NA zostały usunięte.
 
 ```{r czyszczenie, result='hide'}
 bitcoin_diff <- 
@@ -144,11 +153,11 @@ world_development_indicators <-
   select(country_name, `wskaźnik`, year, value)
 ```
 
-# Podsumowanie rozmiaru zbioru, podstawowe statystyki i analiza atrybutów
+# Podsumowanie rozmiarów zbiorów, podstawowe statystyki i analiza atrybutów
 
 ## Bitcoin
 ### Trudność znalezienia nowego bloku
-Statystki 
+Statystyki 
 ```{r statystyki_bitcoin_diff, echo=FALSE}
 knitr::kable(summary(bitcoin_diff))
 ```
@@ -207,21 +216,21 @@ cor1 <- cor(joined1$value.x, joined1$value.y)
 joined2 = inner_join(bitcoin_hrate, bitcoin_mkpru, by="date")
 cor2 <- cor(joined2$value.x, joined2$value.y)
 ```
-Zbiór zaweierający wartości Bitcoina w Dolarach zawiera `r n` obserwacji. W okresie od `r min_date` do `r max_date` najwyższa warość Bitocina wyniosła `r  max` dolarów, a średnia `r round(mean, 2)` dolarów. Duży spadek, który można zaobserwować w połowie 2021 roku spowodowany został zapowiedziami Chińskiego rządu dotyczącymi regulacji odnośnie kryptowalut oraz tweetami Elona Muska na temat zablokowania możliwości płacenia za samochody marki Tesla w tej kryptowalucie czy sprzedaży przez tę firmę  posiadanych Bitcoinów o wartości 1,5 mld dolarów ([Żródło](https://pl.wikipedia.org/wiki/Bitcoin#Rynek)). Wykres wygląda podobnie do wykresu trudności znaleziania nowego bloku i szacowanej liczby tera haszy na sekunde co potwierdzają wartości współczynnika korelacji Pearsona, które wynoszą odpowiednio `r round(cor1,2)` i `r round(cor2,2)`. 
+Zbiór zawierający wartości Bitcoina w Dolarach zawiera `r n` obserwacji. W okresie od `r min_date` do `r max_date` najwyższa wartość Bitcoina wyniosła `r format(max, scientific=FALSE)` dolarów, a średnia `r round(mean, 2)` dolarów. Duży spadek, który można zaobserwować w połowie 2021 roku spowodowany został zapowiedziami Chińskiego rządu dotyczącymi regulacji odnośnie kryptowalut oraz tweetami Elona Muska na temat zablokowania możliwości płacenia za samochody marki Tesla w tej kryptowalucie czy sprzedaży przez tę firmę  posiadanych Bitcoinów o wartości 1,5 mld dolarów ([Źródło](https://pl.wikipedia.org/wiki/Bitcoin#Rynek)). Wykres wygląda podobnie do wykresu trudności znalezienia nowego bloku i szacowanej liczby tera haszy na sekundę co potwierdzają wartości współczynnika korelacji Pearsona, które wynoszą odpowiednio `r round(cor1,2)` i `r round(cor2,2)`. 
 
 ```{r wykres_bitcoin_mkpru, echo=FALSE}
-ggplot(bitcoin_mkpru, aes(x=date, y=value))  + geom_line(color='blue') + labs(x="Data", y="Wartość w dollarach", title="Zmiana wartości Bitcoina w czasie") + scale_x_datetime(breaks = "1 year", date_labels = "%Y") + theme_light()
+ggplot(bitcoin_mkpru, aes(x=date, y=value))  + geom_line(color='blue') + labs(x="Data", y="Wartość w dolarach", title="Zmiana wartości Bitcoina w czasie") + scale_x_datetime(breaks = "1 year", date_labels = "%Y") + theme_light()
 
 ```
 
-Korelację między trudnością znalezienia nowego bloku, szacowaną liczbą tera haszy na sekundę i wartością Bitcoina w dolarach można pokazać na jednym wykresie. W celu czytelenego pokazania wszystkich zmiennych wartości poszczególnych miar zostały znormalizowane. 
+Korelację między trudnością znalezienia nowego bloku, szacowaną liczbą tera haszy na sekundę i wartością Bitcoina w dolarach można pokazać na jednym wykresie. W celu czytelnego pokazania wszystkich wartości poszczególnych miar zostały one znormalizowane. 
 
 ```{r cor_help, echo=FALSE}
 ggplot() + 
   geom_line(data=bitcoin_mkpru, aes(x=date, y=(value-min(value))/(max(value)-min(value))), color='blue') + 
   geom_line(data=bitcoin_hrate, aes(x=date, y=(value-min(value))/(max(value)-min(value))), color='green') + 
   geom_line(data=bitcoin_diff, aes(x=date, y=(value-min(value))/(max(value)-min(value))), color='red')  + 
-  labs(x="Data", y="Znormalizowana warość", title="Wykres trzech znormalizowanych miar dotyczących  Bitcoina") + 
+  labs(x="Data", y="Znormalizowana wartość", title="Wykres trzech znormalizowanych miar dotyczących  Bitcoina") + 
   scale_x_datetime(breaks = "1 year", date_labels = "%Y") + 
   theme_light()
 ```
@@ -245,7 +254,7 @@ cor <- cor(joined$value.x, joined$value.y)
 joined2 = inner_join(bitcoin_hrate, bitcoin_trvou, by="date")
 cor2 <- cor(joined2$value.x, joined2$value.y)
 ```
-Zbiór zaweierający wartość obrotu Bitcoina wyrażony w dolarach zawiera `r n` obserwacji. Najwyższy obrót o wartości `r m$value` USD odnotowano dnia `r m$date`. Korelacja tej miary z wartością Bitcoina w dolarach wynosi `r round(cor,2)` a z liczbą tera haszy na sekundę `r round(cor2,2)`. Obie te korelacje są małe.
+Zbiór zawierający wartość obrotu Bitcoina wyrażonego w dolarach zawiera `r n` obserwacji. Najwyższy obrót o wartości `r format(m$value, cientific=FALSE)` USD odnotowano dnia `r m$date`. Korelacja tej miary z wartością Bitcoina w dolarach wynosi `r round(cor,2)` a z liczbą tera haszy na sekundę `r round(cor2,2)`. Obie te korelacje są małe.
 
 ```{r wykres_bitcoin_trvou, echo=FALSE}
 ggplot(bitcoin_trvou, aes(x=date, y=value))  + geom_line(color='yellow') + labs(x="Data", y="Wartość", title="Wartości wolumenu obrotu w dolarach w czasie") + scale_x_datetime(breaks = "1 year", date_labels = "%Y") + theme_light()
@@ -264,7 +273,7 @@ knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_złoto, echo=FALSE}
-p <- ggplot(gold_prices, aes(x=date, y=value, color=waluta))  + geom_line() + labs(x="Data", y="Wartość w odpowiedniej walucie", title="Interaktywny wykres ceny złota w róznych walutach") + 
+p <- ggplot(gold_prices, aes(x=date, y=value, color=waluta))  + geom_line() + labs(x="Data", y="Wartość w odpowiedniej walucie", title="Interaktywny wykres ceny złota w różnych walutach") + 
   scale_x_datetime(breaks = "5 years", date_labels = "%Y") + 
   theme_light()
 ggplotly(p)
@@ -272,7 +281,7 @@ ggplotly(p)
 
 ## Kursy walut
 
-Spośród wielu walut w oryginalnym zbioerze zostały wybrane cztery: Dolar australijski, Dolar kanadyjski, Rubel i Yuan. Są do waluty używane w państwach z największym wydobyciem złota ([źródło](https://pl.wikipedia.org/wiki/Z%C5%82oto#Kopalnie)). Wybrane zostały ze względu na późniejszą próbę przewidywania cen złota.
+Spośród wielu walut w oryginalnym zbiorze zostały wybrane cztery: Dolar australijski, Dolar kanadyjski, Rubel i Yuan. Są do waluty używane w państwach z największym wydobyciem złota ([źródło](https://pl.wikipedia.org/wiki/Z%C5%82oto#Kopalnie)). Wybrane zostały ze względu na późniejszą próbę przewidywania cen złota.
 
 Statystyki
 ```{r pomoc_currency, echo=FALSE}
@@ -347,7 +356,7 @@ ggplot(tmp, aes(x=date, y=value)) +
   theme_light()
 ```
 
-Powyższy wskaźnik pomaga w ocenie czy ceny akcji na giełdzie są zawyżone. Najwyższa jego wartość wyniosła `r m$value`. Miało to miejsce w `r format(m$date, '%Y')` roku. Był to okres "bański internetowej" kiedy to przeceniane były wartości firm prowadzących działalność w internecie ([źródło](https://pl.wikipedia.org/wiki/Ba%C5%84ka_internetowa)). Inna wysoka wartość widoczna na wykresie to okres początku wielkiego kryzysu ([źródło2](https://pl.wikipedia.org/wiki/Czarny_wtorek), [źródło3](https://www.parkiet.com/Felietony/309199946-Co-podpowiada-wskaznik-Shiller-PE.html?preview=&remainingPreview=&grantedBy=preview&). 
+Powyższy wskaźnik pomaga w ocenie czy ceny akcji na giełdzie są zawyżone. Najwyższa jego wartość wyniosła `r m$value`. Miało to miejsce w `r format(m$date, '%Y')` roku. Był to okres "bański internetowej" kiedy to przeceniane były wartości firm prowadzących działalność w internecie ([źródło](https://pl.wikipedia.org/wiki/Ba%C5%84ka_internetowa)). Inna wysoka wartość widoczna na wykresie to okres początku wielkiego kryzysu ([źródło2](https://pl.wikipedia.org/wiki/Czarny_wtorek), [źródło3](https://www.parkiet.com/Felietony/309199946-Co-podpowiada-wskaznik-Shiller-PE.html?preview=&remainingPreview=&grantedBy=preview&)). 
 
 ### Dywidendy
 ```{r pomoc_divident, echo=FALSE}
@@ -365,14 +374,14 @@ knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_divident, echo=FALSE}
-ggplot(tmp, aes(x=date, y=value, color=wskaźnik)) + 
+ggplot(tmp, aes(x=date, y=value, color=`wskaźnik`)) + 
   geom_line() + 
   labs(x="Data", y="Wartość", title="Dywidendy") +  
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
   theme_light()
 ```
 
-Wartość dywident w okresie czasu, który obejmują dane wykazują trend wzrostowy z jedyn wyraźnym spadkiem w latach 2007 - 2009. Wartości faktycznych dywident przez cały okres była większa niż wartość dywident i wykazywała się większymi wahaniami.
+Wartość dywidend w okresie czasu, który obejmują dane wykazują trend wzrostowy z jednym wyraźnym spadkiem w latach 2007 - 2009. Wartości faktycznych dywidend przez cały okres była większa niż wartość dywidend i wykazywała się większymi wahaniami.
 
 ### Zysk
 
@@ -395,14 +404,14 @@ knitr::kable(summary, align = 'ccccccc')
 ```
 
 ```{r wykres_earnings, echo=FALSE}
-ggplot(tmp, aes(x=date, y=value, color=wskaźnik)) + 
+ggplot(tmp, aes(x=date, y=value, color=`wskaźnik`)) + 
   geom_line() + 
   labs(x="Data", y="Wartość", title="Zysk") +  
   scale_x_datetime(breaks = "10 years", date_labels = "%Y") + 
   theme_light()
 ```
 
-Podobnie jak w przypadku dywident faktyczny zysk wykazuje się większymi wahaniami i większą wartością niż zysk.
+Podobnie jak w przypadku dywidend faktyczny zysk wykazuje się większymi wahaniami i większą wartością niż zysk.
 
 ### Long Interest Rate 
 
@@ -476,7 +485,7 @@ Statystyki
 summary <- tmp %>% 
   group_by(`wskaźnik`) %>%
   summarize(`minimalna wartość`=round(min(value),2), `maksymalna wartość`=round(max(value),2), `średnia wartość`=round(mean(value),2), `odchylenie standardowe`=round(sd(value),2), `dane od`=min(date), `dane do`=max(date))
-
+wsk <- length(unique(world_development_indicators$`wskaźnik`))
 knitr::kable(summary, align = 'ccccccc')
 ```
 
@@ -489,9 +498,9 @@ ggplot(tmp, aes(x=date, y=value)) +
 ```
 
 
-## Wskażniki rozwoju na świecie
+## Wskaźniki rozwoju na świecie
 
-Zbiór opisuje `r length(unique(world_development_indicators$country_name)) - 7` państw oraz cały świat oraz 6 kategori wysokości przychdu przy pomocy `r length(unique(world_development_indicators$wskaźnik))` wskaźników w latach 1970-2020.
+Zbiór opisuje `r length(unique(world_development_indicators$country_name)) - 7` państw, cały świat oraz 6 kategorii wysokości przychodu przy pomocy `r wsk` wskaźników w latach 1970-2020.
 
 # Korelacje
 
@@ -499,17 +508,17 @@ Zbiór opisuje `r length(unique(world_development_indicators$country_name)) - 7`
 zloto_dolary <- gold_prices %>% filter(waluta=="USD") %>% select(date, value)
 ```
 
-Ze względu na późniejsza próbę przewidywania cen złota będe szukane jedeynie korelacje pomiędzy ceną złota w dolarach i wartościami innych wskaźników.
+Ze względu na późniejsza próbę przewidywania cen złota będą szukane jedynie korelacje pomiędzy ceną złota w Dolarach i wartościami innych wskaźników.
 
-## Korelacje pomiędzy ceną złota w dolarach i wkażnikami rozwoju 
+## Korelacje pomiędzy ceną złota w dolarach i wskaźnikami rozwoju 
 
 ### Świat
 
-Korelacje pomiędzy ceną złota a wskaźnikami rozoju dla świata, dla których wartość bezwzględna jest wieksza niż 0.9:
+**Korelacje pomiędzy ceną złota a wskaźnikami rozwoju dla świata, dla których wartość bezwzględna jest większa niż 0.9:**
 
 ```{r world, echo=FALSE, warning=FALSE, results='asis'}
-indicators <- unique(world_development_indicators$wskaźnik)
-tmp <- world_development_indicators %>% filter(country_name == "World") %>% select(year, value, wskaźnik)
+indicators <- unique(world_development_indicators$`wskaźnik`)
+tmp <- world_development_indicators %>% filter(country_name == "World") %>% select(year, value, `wskaźnik`)
 zloto_dolary_rok <- zloto_dolary %>% 
   group_by(year=format(date, "%Y")) %>% 
   summarise(value=mean(value)) %>%
@@ -517,37 +526,41 @@ zloto_dolary_rok <- zloto_dolary %>%
 
 to_visualize <- data.frame(year=as.Date(character()),
                            value.x=double(),
-                           wskaźnik=factor(),
+                           wskaznik=factor(),
                            value.y=double(),
                  stringsAsFactors=FALSE) 
 
 for (i in indicators) {
-      x <- tmp %>% filter(wskaźnik == i)
+      x <- tmp %>% filter(`wskaźnik` == i)
       joined <- inner_join(x, zloto_dolary_rok, by="year")
       if (nrow(joined) >= 30) {
         c <- cor(joined$value.x, joined$value.y)
-        txt <- paste("Warość wpółczynika korelacji Pearsona", i , "do  ceny zlota wynosi", round(c, 2), "\n\n")
+        txt <- paste("Wartość współczynnika korelacji Pearsona", i , "do  ceny złota wynosi", round(c, 2), "\n\n")
         if (!is.na(c) & abs(c) > 0.9){
           cat(txt)
           to_visualize <- rbind(to_visualize, joined)
       }
     }
 }
+to_visualize <- rename(to_visualize, wskaznik=`wskaźnik`)
+cat("\n\n")
 ```
 
-Ponieważ wskaźniki rozwoju określane są z dokładnością do roku to przy obliczaniu korelacji wzięta została średnia cena złota w danym roku. Dodatkowo pod uwagę zostały wzięte tylko takie pary cen złota i wartości wskaźnika, które istnieją dla przynajmniej 30 lat.
+Ponieważ wskaźniki rozwoju określane są z dokładnością do roku to przy obliczaniu korelacji wzięta została średnia cena złota w danym roku. Dodatkowo pod uwagę zostały wzięte tylko takie pary cen złota i wartości wskaźnika, które istnieją dla przynajmniej 30 lat. Wszystkie znalezione korelacja są dodatnie, a najsilniejsza z nich wynosi 0.93 i dotyczy emisji gazów cieplarnianych.
+
+
 
 ```{r cor_world_wykres, echo=FALSE, fig.height=16, message=FALSE, warning=FALSE, , fig.width=8}
-ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
+ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(. ~ wskaznik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
 ```
 
 
 ### USA
 
-Korelacje pomiędzy ceną złota a wskaźnikami rozoju dla Stanów Zjedoczonych, dla których wartość bezwzględna jest wieksza niż 0.9:
+**Korelacje pomiędzy ceną złota a wskaźnikami rozwoju dla Stanów Zjednoczonych, dla których wartość bezwzględna jest większa niż 0.9:**
 
 ```{r usa, echo=FALSE, warning=FALSE, results='asis'}
-indicators <- unique(world_development_indicators$wskaźnik)
+indicators <- unique(world_development_indicators$`wskaźnik`)
 tmp <- world_development_indicators %>% filter(country_name == "United States")
 zloto_dolary_rok <- zloto_dolary %>% 
   group_by(year=format(date, "%Y")) %>% 
@@ -556,35 +569,36 @@ zloto_dolary_rok <- zloto_dolary %>%
 
 to_visualize <- data.frame(year=as.Date(character()),
                            value.x=double(),
-                           wskaźnik=factor(),
+                           `wskaźnik`=factor(),
                            value.y=double(),
                  stringsAsFactors=FALSE) 
 
 for (i in indicators) {
-      x <- tmp %>% filter(wskaźnik == i)
+      x <- tmp %>% filter(`wskaźnik` == i)
       joined <- inner_join(x, zloto_dolary_rok, by="year")
       if (nrow(joined) >= 30) {
         c <- cor(joined$value.x, joined$value.y)
-        txt <- paste("Warość wpółczynika korelacji Pearsona",i , " do  ceny zlota wynosi ", round(c, 2), "\n\n")
+        txt <- paste("Wartość współczynnika korelacji Pearsona",i , " do  ceny złota wynosi ", round(c, 2), "\n\n")
         if (!is.na(c) & abs(c) > 0.9){
           cat(txt)
           to_visualize <- rbind(to_visualize, joined)
       }
     }
 }
+cat("\n\n")
 ```
 
-Podobnie jak miało to miejsce w przypadku obliczania korelacji cen złota ze wskaźnikami rozwoju dla świata użyte zostały średnie ceny złota w danym roku. Również wykorzystano zostały jedynie te pary wskaźnik-cena złota, dla których istieją dane z co najmniej 30 lat.
+Podobnie jak miało to miejsce w przypadku obliczania korelacji cen złota ze wskaźnikami rozwoju dla świata użyte zostały średnie ceny złota w danym roku. Również wykorzystane zostały jedynie te pary wskaźnik-cena złota, dla których istnieją dane z co najmniej 30 lat. Najsilniejsze korelacje dotyczą zysku netto (Net primary income (Net income from abroad) (current US\$), Net primary income (Net income from abroad) (current LCU), Net primary income (BoP, current US\$) i Net primary income (Net income from abroad) (constant LCU)).
 ```{r cor_usa_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
 ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
 ```
 
-## Korelacje pomiędzy ceną złota w dolarach i wkażnikami z S P Composite
+## Korelacje pomiędzy ceną złota w dolarach i wskaźnikami z S&P Composite
 
-Korelacje pomiędzy ceną złota a wskaźnikami z S P Composite, dla których wartość bezwzględna jest wieksza niż 0.75 (w zbiorze nie ma tak silnych korelacji ja w zbiorze ze wskaźnikami rozwoju):
+**Korelacje pomiędzy ceną złota a wskaźnikami z S&P Composite, dla których wartość bezwzględna jest większa niż 0.75 (w zbiorze nie ma tak silnych korelacji ja w zbiorze ze wskaźnikami rozwoju):**
 
 ```{r s_p_composite, echo=FALSE, warning=FALSE, results='asis'}
-indicators <- unique(s_p_composite$wskaźnik)
+indicators <- unique(s_p_composite$`wskaźnik`)
 
 zloto_dolary_miesiac <- zloto_dolary %>% 
   group_by(date=format(date, "%Y-%m")) %>% 
@@ -592,31 +606,33 @@ zloto_dolary_miesiac <- zloto_dolary %>%
   mutate(date=as.POSIXct(strptime(sprintf('%s-01',date), "%Y-%m-%d")))
 
 to_visualize <- data.frame(date=as.Date(character()),
-                           wskaźnik=factor(),
+                           `wskaźnik`=factor(),
                            value.x=double(),
                            value.y=double(),
                  stringsAsFactors=FALSE) 
 
 for (i in indicators) {
-      x <- s_p_composite %>% filter(wskaźnik == i)
+      x <- s_p_composite %>% filter(`wskaźnik` == i)
       joined <- inner_join(x, zloto_dolary_miesiac, by="date")
       
         c <- cor(joined$value.x, joined$value.y)
-        txt <- paste(i , " do  ceny zlota wynosi ", round(c, 2), "\n\n")
+        txt <- paste("Wartość współczynnika korelacji Pearsona",i , " do  ceny złota wynosi ", round(c, 2), "\n\n")
         if (!is.na(c) & abs(c) > 0.75){
           cat(txt)
           to_visualize <- rbind(to_visualize, joined)
       }
     
 }
+cat("\n\n")
 ```
-Ponieważ wskaźniki ze zbioru S P Composite są wyznaczone z dokładnością co do miesiąca to do obliczenia korelacji została wykorzystana średnia cena złota dla danego miesiąca.
+
+Ponieważ wskaźniki ze zbioru S&P Composite są wyznaczone z dokładnością co do miesiąca to do obliczenia korelacji została wykorzystana średnia cena złota dla danego miesiąca. W zbiorze tym najsilniejsze korelacje z ceną złota mają dywidendy i zysk. Wszystkie znalezione korelacje są dodatnie. 
 
 ```{r cor_sp_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
 ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~wskaźnik,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i wybranych wskaźników") + theme_light()
 ```
 
-## Korelacje pomiędzy ceną złota w dolarach i kursami wybraanych walut
+## Korelacje pomiędzy ceną złota w dolarach i kursami wybranych walut
 
 ```{r currency, echo=FALSE, warning=FALSE, results='asis'}
 currencies <- unique(currency_exchange_rates$waluta)
@@ -626,12 +642,14 @@ to_visualize <- data.frame(value.x=double(),
                            waluta=factor()) 
 ```
 
+**Korelacje pomiędzy ceną złota a kursem Dolara amerykańskiego do wybranych walut, dla których wartość bezwzględna jest większa niż 0.75:**
+
 ```{r currency2, echo=FALSE, warning=FALSE, results='asis'}
 for (i in currencies) {
       x <- currency_exchange_rates %>% filter(waluta == i)
       joined <- inner_join(x, zloto_dolary, by="date")
         c <- cor(joined$value.x, joined$value.y)
-        txt <- paste("Korelacja kursu Dolar amerykański/", i , " do  ceny zlota wynosi ", round(c, 2), "\n\n", sep="")
+        txt <- paste("Korelacja kursu Dolar amerykański/", i , " do  ceny złota wynosi ", round(c, 2), "\n\n", sep="")
         if (!is.na(c) & abs(c) > 0.75){
           cat(txt)
           joined <- joined %>% select(value.x, value.y, waluta)
@@ -639,7 +657,10 @@ for (i in currencies) {
       }
     
 }
+cat("\n\n")
 ```
+
+Spośród wybranych walut najsilniejsze korelacje (w obu przypadkach ujemne) mają kursy Dolara amerykańskiego do Yuana i Dolara kanadyjskiego.
 
 ```{r cor_cur_wykres, echo=FALSE, fig.height=8, message=FALSE, warning=FALSE, , fig.width=8}
 ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~waluta,scales = "free", ncol=2) + labs(x="Cena złota", y="Wartość", title="Korelacja ceny złota i kursu Dolara amerykańskiego do wybranych walut") + theme_light()
@@ -650,40 +671,146 @@ ggplot(to_visualize, aes(x=value.y, y=value.x))  + geom_smooth() + facet_wrap(~w
 ```{r bitcoin, echo=FALSE, warning=FALSE, results='asis'}
 joined <- inner_join(x, bitcoin_diff, by="date")
 c <- cor(joined$value.x, joined$value.y)
-txt <- paste("bitcoin_diff do  ceny zlota wynosi ", round(c, 2), "\n\n")
+txt <- paste("Współczynnik korelacji Pearsona bitcoin_diff do  ceny złota wynosi", round(c, 2), "\n\n")
 if (!is.na(c) & abs(c) > 0){
     cat(txt)
 }
 
 joined <- inner_join(x, bitcoin_hrate, by="date")
 c <- cor(joined$value.x, joined$value.y)
-txt <- paste("bitcoin_hrate do  ceny zlota wynosi ", round(c, 2), "\n\n")
+txt <- paste("Współczynnik korelacji Pearsona bitcoin_hrate do  ceny złota wynosi", round(c, 2), "\n\n")
 if (!is.na(c) & abs(c) > 0){
     cat(txt)
 }
 
 joined <- inner_join(x, bitcoin_mkpru, by="date")
 c <- cor(joined$value.x, joined$value.y)
-txt <- paste("bitcoin_mkpru do  ceny zlota wynosi ", round(c, 2), "\n\n")
+txt <- paste("Współczynnik korelacji Pearsona bitcoin_mkpru do  ceny złota wynosi", round(c, 2), "\n\n")
 if (!is.na(c) & abs(c) > 0){
     cat(txt)
 }
 
 joined <- inner_join(x, bitcoin_trvou, by="date")
 c <- cor(joined$value.x, joined$value.y)
-txt <- paste("bitcoin_trvou do  ceny zlota wynosi ", round(c, 2), "\n\n")
+txt <- paste("Współczynnik korelacji Pearsona bitcoin_trvou do  ceny złota wynosi", round(c, 2), "\n\n")
 if (!is.na(c) & abs(c) > 0){
     cat(txt)
 }
-
+cat("\n\n")
 ```
 
-Korelacje ceny złota i wskaźników dotyczących Bitocina są małe. Dodatkowo dane dotyczące Bitcoina pochodzą z krótkiego okresu czasu w prówaniu do wskaźników z innych zbiorów oraz do cen złota. Z tego powodu nie zostaną one wzięte pod uwagę przy próbieprzewidywania cen złota.
+Korelacje ceny złota i wskaźników dotyczących Bitcoina są małe. Dodatkowo dane dotyczące Bitcoina pochodzą z krótkiego okresu czasu w porównaniu do wskaźników z innych zbiorów oraz do cen złota. Z tego powodu nie zostaną one wzięte pod uwagę przy próbie przewidywania cen złota.
 
 # Przewidywanie cen złota
 
+Celem tej sekcji jest stworzenie modelu przewidującego ceny złota w Dolarach amerykańskich. 
+
+## Dane
+Zbiór danych został przygotowany w następujący sposób - dla każdej daty, której przyporządkowana jest cena złota w Dolarach:
+
+* została przyporządkowana wartość wskaźnika rozwoju świata z odpowiadającego jej roku. Wzięte zostały pod uwagę wskaźnika dla świata i USA, dla których wartość absolutna współczynnika korelacji Pearsona była większa niż lub równa 0,9. W przypadku USA spośród czterech wskaźników odnoszących się do zysku netto wybrano jedynie _Service exports (BoP, current US$)_.
+
+*  została przyporządkowana wartość wskaźnika ze zbioru S&P Composite z odpowiadającego jej miesiąca. Wybrane zostały wskaźniki, dla których wartość absolutna współczynnika korelacji Pearsona była większa niż lub równa 0,75.
+
+* Kurs Dolara amerykańskiego do Yuana i Dolara kanadyjskiego z danego dnia.
+
+Następnie z powstałej ramki danych zostały usunięte te wiersze, które zawierają przynajmniej jedną wartość NA i kolumny reprezentujące daty. W kolejnym kroku zbiór został podzielony na treningowy (80%) i testowy (20%).
+
+```{r data, echo=FALSE, warning=FALSE, results='asis'}
+usa <- world_development_indicators %>% 
+  filter(country_name == "United States", wskaźnik %in%  c("Net primary income (Net income from abroad) (current US$)", 
+                                                           "Exports of goods and services (current US$)", 
+                                                           "Service exports (BoP, current US$)")) %>%
+  select(wskaźnik, year, value)
+
+
+  world <- world_development_indicators %>% 
+  filter(country_name == "World", wskaźnik %in%  c("Total greenhouse gas emissions (kt of CO2 equivalent)", 
+                                                   "Net official development assistance received (current US$)", 
+                                                   "Imports of goods and services (current US$)",
+                                                   "Gross national expenditure (current US$)",
+                                                   "Gross domestic savings (current US$)",
+                                                   "GDP (current US$)",
+                                                   "Exports of goods and services (current US$)",
+                                                   "Pearsona CO2 emissions from solid fuel consumption",
+                                                   "CO2 emissions (kt)",
+                                                   "Goods imports (BoP, current US$)",
+                                                   "Individuals using the Internet (% of population)")) %>%
+  select(wskaźnik, year, value)
+  
+s_p_composite <- s_p_composite %>% filter( wskaźnik %in% c("S.P.Composite",
+                                                          "Dividend",
+                                                          "Earnings",
+                                                          "CPI",
+                                                          "Real.Dividend",
+                                                          "Real.Earnings"))
+
+currency_exchange_rates <- currency_exchange_rates %>% filter( waluta %in% c("Yuan", "Dolar kanadyjski"))
+  
+
+usa <- usa %>% spread(wskaźnik, value)
+world <- world %>% spread(wskaźnik, value) 
+s_p_composite <- s_p_composite %>% spread(wskaźnik, value)%>% rename(month=date)
+currency_exchange_rates <- currency_exchange_rates %>% spread(waluta, value)
+data <- zloto_dolary %>% mutate(year=as.POSIXct(strptime(sprintf('%s-01-01',substr(date, 1, 4)), "%Y-%m-%d")), 
+                                month=as.POSIXct(cut(as.POSIXct(strptime(date, "%Y-%m-%d")), "month")))
+
+
+
+joined <- full_join(world, usa, by="year", suffix=c(" World", " USA")) 
+joined <- left_join(data, joined, by="year")
+joined <- left_join(joined, s_p_composite , by="month") 
+data <- left_join(joined, currency_exchange_rates, by="date") %>% arrange(date) %>% select(-c(year, month, date))
+
+data <- data[complete.cases(data), ]
+
+inTraining <- 
+    createDataPartition(
+        y = data$value,
+        p = .8,
+        list = FALSE)
+
+train <- data[inTraining,]
+test <- data[-inTraining,]
+```
+
 ## Regresor
+
+Do stworzenie regresora wykorzystany został algorytm eXtreme Gradient Boosting. Jako schemat uczenia wykorzysta została powtórzona ocena krzyżowa z pięcioma podziałami i dwoma powtórzeniami. Najlepsze parametry modelu zostały dobrane automatycznie przez bibliotekę caret.
+
+```{r ml_prepare}
+ctrl <- trainControl(
+    method = "repeatedcv",
+    number = 5,
+    repeats = 2)
+
+```
+
+```{r training}
+fit <- train(value ~ .,
+             data = train,
+             method = "xgbLinear",
+             trControl = ctrl)
+```
 
 ## Wyniki
 
+```{r predict}
+predictions <- predict(fit, newdata = test)
+metrics <- postResample(pred = predictions, obs = test$value)
+```
+
+Do oceny modelu zostały wykorzystane zostały miary RMSE (pierwiastek błędu średniokwadratowego), R^2^ (współczynnik determinacji) oraz MAE (średni błąd bezwzględny). Są to miary przeznaczone do oceny modeli regresyjnych. Wartość RMSE wyniosła `r metrics[["RMSE"]]` co oznacza, że ceny złota przewidziane przez model różniły się średnio od rzeczywistych o `r metrics[["RMSE"]]` Dolarów. Miara R^2^ wyniosła `r metrics[["Rsquared"]]`. Tak wysoka wartość świadczy o wysokim dopasowaniu do danych. Średni błąd bezwzględny wyniósł `r metrics[["MAE"]]`.
+
 ## Analiza atrybutów najlepszego znalezionego modelu
+
+Dwoma miarami, które okazały się najważniejsze w procesie uczenia były współczynnik CPI i kurs Dolara do Yuana. Mają one bardzo dużą przewagę nad pozostałymi użytymi miarami. Warto zauważyć, że wiele wskaźników, które wykazywały się dużą korelacją z ceną złota nie zostało użytych przy uczeniu modelu albo miało na niego mały wpływ. Może być to spowodowane decyzją o wypełnianiu brakujących danych dotyczących wartości wskaźnika danego dnia wartością, którą przyjmował on w danym roku. W przypadku Yuana, który cechował się dużą korelacją z ceną złota i którego brakujące wartości nie były w żaden sposób uzupełniane wyraźnie widać wpływ na model.
+
+```{r echo=FALSE}
+importance <- varImp(fit, scale = FALSE)
+importance <- importance$importance
+importance <- cbind(miara = rownames(importance), importance)
+rownames(importance) <- 1:nrow(importance)
+importance <- importance %>% rename(ważność=Overall)
+knitr::kable(importance)
+```
